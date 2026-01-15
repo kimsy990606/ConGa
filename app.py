@@ -22,8 +22,12 @@ st.set_page_config(
     page_title="변호사 계약서 검증",
     page_icon="⚖️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
+
+# 세션 상태 초기화
+if 'checklist_step' not in st.session_state:
+    st.session_state.checklist_step = 1  # 1: 체크리스트, 2: 이런 변호사는 피하세요, 3: 메인
 
 # CSS 스타일
 st.markdown("""
@@ -95,35 +99,60 @@ with st.expander("📢 서비스 소개", expanded=False):
     최종 계약 결정은 반드시 변호사와 직접 상담 후 하시기 바랍니다.
     """)
 
-# 사이드바 - 체크리스트
-st.sidebar.title("📋 계약 전 체크리스트")
-st.sidebar.markdown("""
-### ✅ 계약서 검토 전 필수 확인
+# 모달 형식의 체크리스트 (세션 상태에 따라 표시)
+if st.session_state.checklist_step == 1:
+    # Step 1: 계약 전 체크리스트
+    st.markdown("""
+    <div style="background-color: #f8f9fa; border: 2px solid #007bff; border-radius: 10px; padding: 2rem; margin: 2rem 0;">
+    """, unsafe_allow_html=True)
 
-아래 항목들을 먼저 체크하셨나요?
-""")
+    st.markdown("## 📋 계약 전 체크리스트")
+    st.markdown("### ✅ 계약서 검토 전 필수 확인")
+    st.markdown("아래 항목들을 먼저 체크해주세요.")
+    st.markdown("")
 
-check1 = st.sidebar.checkbox("여러 변호사와 상담을 진행했다")
-check2 = st.sidebar.checkbox("사건을 담당할 변호사와 직접 상담했다")
-check3 = st.sidebar.checkbox("'무조건 승소한다'는 말을 듣지 않았다")
-check4 = st.sidebar.checkbox("계약을 꼭 해야 한다고 생각하지 않는다")
+    check1 = st.checkbox("여러 변호사와 상담을 진행했다")
+    check2 = st.checkbox("사건을 담당할 변호사와 직접 상담했다")
+    check3 = st.checkbox("'무조건 승소한다'는 말은 과장의 위험이 있습니다.")
+    check4 = st.checkbox("상담한 변호사와 필수적으로 계약을 해야하는 것은 아니니, 충분히 고민해보세요.")
 
-if not all([check1, check2, check3, check4]):
-    st.sidebar.warning("⚠️ 위 항목들을 먼저 확인해주세요!")
-else:
-    st.sidebar.success("✅ 좋습니다! 이제 계약서를 분석해보세요.")
+    st.markdown("")
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("""
-### 🚨 이런 변호사는 피하세요
+    if not all([check1, check2, check3, check4]):
+        st.warning("⚠️ 모든 항목을 체크해주세요!")
+        st.button("다음", disabled=True)
+    else:
+        st.success("✅ 좋습니다!")
+        if st.button("다음"):
+            st.session_state.checklist_step = 2
+            st.rerun()
 
-- "무조건 승소한다"고 말함
-- 현금으로 내면 깎아준다고 함
-- 계약서 없이 진행하자고 함
-- 착수금만 많고 설명이 부족함
-""")
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
 
-# 메인 컨텐츠
+elif st.session_state.checklist_step == 2:
+    # Step 2: 이런 변호사는 피하세요
+    st.markdown("""
+    <div style="background-color: #fff3cd; border: 2px solid #ffc107; border-radius: 10px; padding: 2rem; margin: 2rem 0;">
+    """, unsafe_allow_html=True)
+
+    st.markdown("## 🚨 이런 변호사는 피하세요")
+    st.markdown("")
+    st.markdown("""
+    - 현금으로 내면 깎아준다고 함
+    - 착수금만 많고 설명이 부족함
+    - 착수금이 너무 적을 경우, 위탁 범위가 본인이 생각하는 범위와 다를 수 있습니다
+    """)
+    st.markdown("")
+
+    if st.button("완료"):
+        st.session_state.checklist_step = 3
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
+
+# Step 3: 메인 컨텐츠 (체크리스트 완료 후)
 st.markdown("---")
 
 # 파일 업로드
