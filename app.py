@@ -117,6 +117,17 @@ if st.session_state.checklist_step == 1:
     check4 = st.checkbox("상담한 변호사와 필수적으로 계약을 해야하는 것은 아니니, 충분히 고민해보세요.")
 
     st.markdown("")
+    st.markdown("---")
+    st.markdown("### 🔍 변호사 등록 확인")
+    st.markdown("""
+    계약하려는 변호사가 실제로 등록된 변호사인지 반드시 확인하세요.
+
+    👉 **[대한변호사협회 변호사 검색](https://www.koreanbar.or.kr/pages/search/search.asp)** (새 창에서 직접 조회)
+
+    ⚠️ 미등록 또는 자격정지 상태의 변호사와 계약하면 법적 보호를 받을 수 없습니다.
+    """)
+
+    st.markdown("")
 
     if not all([check1, check2, check3, check4]):
         st.warning("⚠️ 모든 항목을 체크해주세요!")
