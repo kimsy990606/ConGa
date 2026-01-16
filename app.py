@@ -8,6 +8,7 @@
 import streamlit as st
 import sys
 import os
+from datetime import datetime, timedelta
 
 # 현재 디렉토리를 Python 경로에 추가
 sys.path.insert(0, os.path.dirname(__file__))
@@ -16,6 +17,81 @@ from contract_analyzer import ContractAnalyzer
 import PyPDF2
 from PIL import Image
 import io
+
+# 결과 자동 소멸 시간 (분)
+RESULT_EXPIRY_MINUTES = 5
+
+# 개선 요청서 생성 함수 (사용 전에 정의되어야 함)
+def generate_improvement_request(results):
+    """변호사에게 보낼 개선 요청서 생성"""
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append("계약서 개선 요청서")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append("변호사님께,")
+    lines.append("")
+    lines.append("계약서를 검토한 결과 다음 사항에 대해 명확히 해주시면 감사하겠습니다:")
+    lines.append("")
+
+    # 위험 조항
+    if results['risk_patterns']:
+        lines.append("=" * 60)
+        lines.append("1. 위험 조항 개선 요청")
+        lines.append("=" * 60)
+        lines.append("")
+
+        for i, risk in enumerate(results['risk_patterns'], 1):
+            lines.append(f"[{i}] {risk['data']['description']}")
+            lines.append(f"    → 개선 요청: {risk['data']['suggestion']}")
+            lines.append("")
+
+    # 구체성 문제
+    if results.get('specificity_issues'):
+        lines.append("=" * 60)
+        lines.append("2. 구체성 개선 요청")
+        lines.append("=" * 60)
+        lines.append("")
+
+        for i, issue in enumerate(results['specificity_issues'], 1):
+            lines.append(f"[{i}] {issue['clause']}")
+            lines.append(f"    → {issue['info']['suggestion']}")
+            lines.append("")
+
+    # 누락 조항
+    missing_required = [name for name, info in results['required_check'].items()
+                       if not info['found'] and info['data']['importance'] == '필수']
+
+    if missing_required:
+        lines.append("=" * 60)
+        lines.append("3. 누락된 필수 조항")
+        lines.append("=" * 60)
+        lines.append("")
+
+        for clause_name in missing_required:
+            lines.append(f"- {clause_name}: {results['required_check'][clause_name]['data']['description']}")
+        lines.append("")
+
+    # Double Check 질문
+    lines.append("=" * 60)
+    lines.append("4. 추가 확인 질문")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append("□ 가압류/가처분도 위임 범위에 포함되나요?")
+    lines.append("□ 시간당 차지 금액이 얼마인가요?")
+    lines.append("□ 화해로 끝나도 성과보수를 내야 하나요?")
+    lines.append("□ 일부 승소 시 비율 계산은 어떻게 하나요?")
+    lines.append("□ 계약 해지 시 환불 금액은 어떻게 계산하나요?")
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append("위 사항들에 대해 명확한 답변 부탁드립니다.")
+    lines.append("감사합니다.")
+    lines.append("")
+    lines.append("의뢰인 올림")
+
+    return "\n".join(lines)
 
 # 페이지 설정
 st.set_page_config(
@@ -28,6 +104,36 @@ st.set_page_config(
 # 세션 상태 초기화
 if 'checklist_step' not in st.session_state:
     st.session_state.checklist_step = 1  # 1: 체크리스트, 2: 이런 변호사는 피하세요, 3: 메인
+
+# 분석 결과 만료 체크 및 자동 삭제
+def check_and_clear_expired_results():
+    """만료된 분석 결과 자동 삭제"""
+    if 'analysis_expiry' in st.session_state:
+        if datetime.now() > st.session_state.analysis_expiry:
+            # 만료됨 - 모든 분석 데이터 삭제
+            keys_to_delete = ['analysis_results', 'analysis_expiry', 'analyzed_text']
+            for key in keys_to_delete:
+                if key in st.session_state:
+                    del st.session_state[key]
+            return True  # 만료됨
+    return False  # 유효함
+
+def get_remaining_time():
+    """남은 시간 계산 (초 단위)"""
+    if 'analysis_expiry' in st.session_state:
+        remaining = st.session_state.analysis_expiry - datetime.now()
+        return max(0, int(remaining.total_seconds()))
+    return 0
+
+def clear_analysis_data():
+    """분석 데이터 즉시 삭제"""
+    keys_to_delete = ['analysis_results', 'analysis_expiry', 'analyzed_text']
+    for key in keys_to_delete:
+        if key in st.session_state:
+            del st.session_state[key]
+
+# 페이지 로드 시 만료 체크
+check_and_clear_expired_results()
 
 # CSS 스타일
 st.markdown("""
@@ -83,7 +189,7 @@ with st.expander("📢 서비스 소개", expanded=False):
     변호사-의뢰인 계약 분쟁을 줄이기 위한 **비영리 프로젝트**입니다.
     
     ✅ **완전 무료** - 수익화 없음  
-    ✅ **개인정보 보호** - 업로드된 파일은 분석 후 즉시 삭제  
+    ✅ **개인정보 보호** - 분석 결과는 5분 후 자동 삭제, 원본 파일은 저장하지 않음
     ✅ **오픈소스** - GitHub에서 코드 확인 가능  
     
     ### 📊 분석 내용
@@ -183,10 +289,11 @@ with col2:
     **지원 형식:**
     - PDF 파일
     - JPG, PNG 이미지
-    
+
     **개인정보 보호:**
     - 이름, 주소 등은 가려도 됩니다
-    - 분석 후 즉시 삭제됩니다
+    - 원본 파일은 저장하지 않습니다
+    - 분석 결과는 5분 후 자동 삭제됩니다
     """)
 
 # 텍스트 직접 입력 옵션
@@ -237,17 +344,39 @@ if uploaded_file:
             
             analyzer = ContractAnalyzer()
             results = analyzer.analyze_contract(text)
-            
+
             progress_bar.progress(80)
             status_text.text("📊 분석 결과를 정리하고 있습니다...")
-            
+
+            # 결과를 세션에 저장하고 만료 시간 설정
+            st.session_state.analysis_results = results
+            st.session_state.analysis_expiry = datetime.now() + timedelta(minutes=RESULT_EXPIRY_MINUTES)
+            st.session_state.analyzed_text = None  # 원본 텍스트는 저장하지 않음 (개인정보 보호)
+
+            # 원본 데이터 즉시 삭제
+            del text
+
             progress_bar.progress(100)
             status_text.text("✅ 분석 완료!")
-            
+
             # 3. 결과 표시
             st.markdown("---")
             st.markdown("## 📊 분석 결과")
-            
+
+            # 개인정보 보호 알림 및 카운트다운
+            remaining_seconds = get_remaining_time()
+            remaining_minutes = remaining_seconds // 60
+            remaining_secs = remaining_seconds % 60
+
+            privacy_col1, privacy_col2 = st.columns([3, 1])
+            with privacy_col1:
+                st.info(f"🔒 **개인정보 보호**: 분석 결과는 **{remaining_minutes}분 {remaining_secs}초** 후 자동 삭제됩니다. (새로고침 시 갱신)")
+            with privacy_col2:
+                if st.button("🗑️ 지금 삭제", help="분석 결과를 즉시 삭제합니다"):
+                    clear_analysis_data()
+                    st.success("✅ 분석 결과가 삭제되었습니다.")
+                    st.rerun()
+
             # 종합 점수
             score = results['score']
             
@@ -471,79 +600,7 @@ if uploaded_file:
     
     except Exception as e:
         st.error(f"❌ 오류가 발생했습니다: {str(e)}")
-        st.info("PDF 파일이 손상되었거나 읽을 수 없는 형식일 수 있습니다. 다른 파일을 시도해주세요.")
-
-# 개선 요청서 생성 함수
-def generate_improvement_request(results):
-    """변호사에게 보낼 개선 요청서 생성"""
-    
-    lines = []
-    lines.append("=" * 60)
-    lines.append("계약서 개선 요청서")
-    lines.append("=" * 60)
-    lines.append("")
-    lines.append("변호사님께,")
-    lines.append("")
-    lines.append("계약서를 검토한 결과 다음 사항에 대해 명확히 해주시면 감사하겠습니다:")
-    lines.append("")
-    
-    # 위험 조항
-    if results['risk_patterns']:
-        lines.append("=" * 60)
-        lines.append("1. 위험 조항 개선 요청")
-        lines.append("=" * 60)
-        lines.append("")
-        
-        for i, risk in enumerate(results['risk_patterns'], 1):
-            lines.append(f"[{i}] {risk['data']['description']}")
-            lines.append(f"    → 개선 요청: {risk['data']['suggestion']}")
-            lines.append("")
-    
-    # 구체성 문제
-    if results.get('specificity_issues'):
-        lines.append("=" * 60)
-        lines.append("2. 구체성 개선 요청")
-        lines.append("=" * 60)
-        lines.append("")
-        
-        for i, issue in enumerate(results['specificity_issues'], 1):
-            lines.append(f"[{i}] {issue['clause']}")
-            lines.append(f"    → {issue['info']['suggestion']}")
-            lines.append("")
-    
-    # 누락 조항
-    missing_required = [name for name, info in results['required_check'].items() 
-                       if not info['found'] and info['data']['importance'] == '필수']
-    
-    if missing_required:
-        lines.append("=" * 60)
-        lines.append("3. 누락된 필수 조항")
-        lines.append("=" * 60)
-        lines.append("")
-        
-        for clause_name in missing_required:
-            lines.append(f"- {clause_name}: {results['required_check'][clause_name]['data']['description']}")
-        lines.append("")
-    
-    # Double Check 질문
-    lines.append("=" * 60)
-    lines.append("4. 추가 확인 질문")
-    lines.append("=" * 60)
-    lines.append("")
-    lines.append("□ 가압류/가처분도 위임 범위에 포함되나요?")
-    lines.append("□ 시간당 차지 금액이 얼마인가요?")
-    lines.append("□ 화해로 끝나도 성과보수를 내야 하나요?")
-    lines.append("□ 일부 승소 시 비율 계산은 어떻게 하나요?")
-    lines.append("□ 계약 해지 시 환불 금액은 어떻게 계산하나요?")
-    lines.append("")
-    lines.append("=" * 60)
-    lines.append("")
-    lines.append("위 사항들에 대해 명확한 답변 부탁드립니다.")
-    lines.append("감사합니다.")
-    lines.append("")
-    lines.append("의뢰인 올림")
-    
-    return "\n".join(lines)
+        st.info("파일이 손상되었거나 읽을 수 없는 형식일 수 있습니다. 다른 파일을 시도해주세요.")
 
 # 푸터
 st.markdown("---")
